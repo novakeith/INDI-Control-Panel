@@ -1,0 +1,68 @@
+body { font-family: sans-serif; }
+/* Style for the status message box */
+#status {
+	margin-top: 15px;
+	padding: 10px;
+	border-radius: 5px;
+	font-weight: bold;
+}
+.status-success {
+	color: #155724;
+	background-color: #d4edda;
+	border: 1px solid #c3e6cb;
+}
+.status-error {
+	color: #721c24;
+	background-color: #f8d7da;
+	border: 1px solid #f5c6cb;
+}
+
+#connectionStatus {
+font-weight: bold;
+margin-left: 10px;
+padding: 5px 10px;
+border-radius: 15px; /* Pill shape */
+font-size: 0.9em;
+}
+
+.status-connected {
+	color: #ffffff;
+	background-color: #28a745; /* Green */
+}
+
+.status-disconnected {
+	color: #ffffff;
+	background-color: #dc3545; /* Red */
+}
+
+/* Styling for the collapsible device sections */
+.device-details {
+	border: 1px solid #ddd;
+	border-radius: 5px;
+	margin-bottom: 8px;
+	overflow: hidden; /* Ensures rounded corners are neat */
+}
+
+.device-summary {
+	background-color: #f7f7f7;
+	padding: 10px 15px;
+	font-size: 1.1em;
+	font-weight: bold;
+	cursor: pointer;
+	outline: none; /* Removes focus ring on click */
+	border-bottom: 1px solid #ddd;
+}
+
+.device-details[open] > .device-summary {
+	border-bottom: 1px solid #ddd;
+}
+
+.device-properties {
+	padding: 15px;
+	background-color: #fff;
+}
+#stopRefreshBtn {
+display: none; /* Hidden by default */
+background-color: #ffc107; /* Amber color */
+color: #000;
+}
