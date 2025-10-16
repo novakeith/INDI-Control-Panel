@@ -189,5 +189,3 @@ def get_device_data():
     with devices_lock:
         return jsonify(INDI_DEVICES)
         
-if __name__ == '__main__':
-    app.run(debug=True)
