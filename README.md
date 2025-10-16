@@ -5,17 +5,22 @@ I put this together to be able to remotely control some of the functions I would
 
 ## How do I install it?
 Clone or download this github repository
-```	git clone https://github.com/novakeith/INDI-Control-Panel.git```
+```	git clone https://github.com/novakeith/INDI-Control-Panel.git
+```
 
 Ensure you have Flask for Python installed. I created a virtual environment to keep things simple. Enter the working directory where you put the project files and create the venv:
-```	python3 -m venv . 
-	./bin/pip3 install flask```
+	```	
+	python3 -m venv . 
+	./bin/pip3 install flask
+	```
 
 You don't need the virtual environment if you want to install flask system wide, it's your choice. Either way, when you are ready, you can run the service with:
-```	./bin/python3 app.py```
+```	./bin/python3 app.py
+```
 
 or if you aren't working in a virtual environment:
-```	python3 indicontrolpanel.py```
+```	python3 indicontrolpanel.py
+```
 
 
 ## What's the current status?
