@@ -1,27 +1,31 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>INDI Control Panel</title>
-	<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-	<script src="{{ url_for('static', filename='script.js') }}" defer></script>
+    <title>INDI Web Control</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='script.js') }}" defer></script>
 </head>
 <body>
     <h1>INDI Control Panel 🔭</h1>
-	
-	<label for="indiHostInput">INDI Server IP Address:</label>
-	<input type="text" id="indiHostInput" value="localhost" placeholder="e.g., localhost or 192.168.1.100">
-	<button id="connectBtn">Connect</button>
-	<span id="connectionStatus" class="status-disconnected">Disconnected</span>
-	
+    <div>
+        <label for="indiHostInput">INDI Server IP Address:</label>
+        <input type="text" id="indiHostInput" value="localhost" placeholder="e.g., localhost or 192.168.1.100">
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn">Disconnect</button>
+        <span id="connectionStatus" class="status-disconnected">Disconnected</span>
+    </div>
     <hr>
-    <h2>INDI Control</h2>
+    <h2>Controls</h2>
     <button id="getPropertiesBtn">Get Properties</button>
-	<button id="stopRefreshBtn">Stop Refresh</button>
-    
-    <div id="status"></div>
-	<hr>
-	<h2>Device Properties</h2>
-		<div id="devicesContainer"></div>
 
+    
+    <div id="devicesContainer">
+        <!-- Device properties will be dynamically inserted here -->
+    </div>
+
+    <div id="imagingJobContainer"></div>
+
+    <div id="status"></div>
 </body>
 </html>

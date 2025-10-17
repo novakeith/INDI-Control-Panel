@@ -15,9 +15,11 @@ python3 -m venv .
 ./bin/pip3 install flask
 ```
 
-Please also make sure gunicorn is installed
+Please also make sure gunicorn, flask-socketio, and eventlet are all installed
 ```
 ./bin/pip3 install gunicorn
+./bin/pip3 install flask-socketio
+./bin/pip3 install eventlet
 ```
 
 You don't need the virtual environment if you want to install flask system wide, it's your choice. Either way, when you are ready, you should make launch.sh executable and run the service with:
@@ -31,10 +33,12 @@ chmod +x launch.sh
 I'm figuring out how to make this work. I'm not sure if it will go anywhere. Right now, you can:
 - run this, either locally or on your remote observatory PC/Raspberry Pi;
 - access the service via http://127.0.0.1:5000 if you are local or http://{Your-Remote-Computer-IP}:5000
-- you can currently get the status of your INDI devices, with a 2 second refresh/polling rate.
+- you can currently get the status of your INDI devices, with live refresh from your INDI server
+- 
 
 ## What's the roadmap?
 I want to add:
+- enable remote control of your CCD and download images to a local directory. (or save on the remote server)
 - have the server initiate an imaging job 
 - have the server manage that imaging job 
 - get the current status of your imaging job, with the option to pause + pick back up at another time if needed

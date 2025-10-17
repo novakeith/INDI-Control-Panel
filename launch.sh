@@ -24,9 +24,10 @@ fi
 # --- Launch the application ---
 echo "Starting INDI Control Panel on http://0.0.0.0:5000"
 
-# --workers 4: Starts 4 worker processes to handle requests.
-# --bind 0.0.0.0:8000: Binds to port 8000 on all network interfaces.
+# --worker-class eventlet: A special worker required for WebSocket support.
+# -w 1: With eventlet, one worker can handle many concurrent connections.
+# --bind 0.0.0.0:5000: Binds to port 8000 on all network interfaces.
 # indicontrolpanel:app: Tells Gunicorn to look inside the 'indicontrolpanel.py'
 #                      file for the Flask instance named 'app'.
-$GUNICORN_CMD --workers 4 --bind 0.0.0.0:5000 indicontrolpanel:app
+$GUNICORN_CMD --worker-class eventlet -w 1 --bind 0.0.0.0:5000 indicontrolpanel:app
 

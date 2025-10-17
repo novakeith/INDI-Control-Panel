@@ -1,68 +1,131 @@
+/* General Body and Control Styles */
 body { font-family: sans-serif; }
-/* Style for the status message box */
+
 #status {
-	margin-top: 15px;
-	padding: 10px;
-	border-radius: 5px;
-	font-weight: bold;
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 5px;
+    font-weight: bold;
 }
 .status-success {
-	color: #155724;
-	background-color: #d4edda;
-	border: 1px solid #c3e6cb;
+    color: #155724;
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
 }
 .status-error {
-	color: #721c24;
-	background-color: #f8d7da;
-	border: 1px solid #f5c6cb;
+    color: #721c24;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
 }
 
 #connectionStatus {
-font-weight: bold;
-margin-left: 10px;
-padding: 5px 10px;
-border-radius: 15px; /* Pill shape */
-font-size: 0.9em;
+    font-weight: bold;
+    margin-left: 10px;
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 0.9em;
 }
-
 .status-connected {
-	color: #ffffff;
-	background-color: #28a745; /* Green */
+    color: #ffffff;
+    background-color: #28a745;
 }
-
 .status-disconnected {
-	color: #ffffff;
-	background-color: #dc3545; /* Red */
+    color: #ffffff;
+    background-color: #dc3545;
 }
 
-/* Styling for the collapsible device sections */
-.device-details {
-	border: 1px solid #ddd;
-	border-radius: 5px;
-	margin-bottom: 8px;
-	overflow: hidden; /* Ensures rounded corners are neat */
+/* NEW: Hide disconnect button by default */
+#disconnectBtn {
+    display: none;
 }
 
-.device-summary {
-	background-color: #f7f7f7;
-	padding: 10px 15px;
-	font-size: 1.1em;
-	font-weight: bold;
-	cursor: pointer;
-	outline: none; /* Removes focus ring on click */
-	border-bottom: 1px solid #ddd;
-}
-
-.device-details[open] > .device-summary {
-	border-bottom: 1px solid #ddd;
-}
-
-.device-properties {
-	padding: 15px;
-	background-color: #fff;
-}
 #stopRefreshBtn {
-display: none; /* Hidden by default */
-background-color: #ffc107; /* Amber color */
-color: #000;
+    background-color: #ffc107;
+    color: #000;
+}
+
+/* Collapsible Device Sections */
+.device-details {
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+.device-summary {
+    background-color: #f7f7f7;
+    padding: 10px 15px;
+    font-size: 1.1em;
+    font-weight: bold;
+    cursor: pointer;
+    outline: none;
+}
+.device-details[open] > .device-summary {
+    border-bottom: 1px solid #ddd;
+}
+.device-properties {
+    padding: 15px;
+    background-color: #fff;
+}
+
+/* Imaging Job Panel */
+#imagingJobContainer {
+    display: none;
+}
+.imaging-panel {
+    border: 1px solid #ccc;
+    background-color: #f9f9f9;
+    border-radius: 5px;
+    padding: 15px;
+    margin-top: 20px;
+}
+.imaging-panel h3 {
+    margin-top: 0;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 10px;
+}
+.ccd-name {
+    font-weight: normal;
+    color: #555;
+}
+.job-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+.control-group {
+    display: flex;
+    flex-direction: column;
+}
+.control-group label {
+    font-weight: bold;
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+.control-group input,
+.control-group select {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 1em;
+}
+.job-actions button {
+    padding: 10px 15px;
+    margin-right: 10px;
+    border: none;
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+}
+#startJobBtn {
+    background-color: #007bff;
+}
+#cancelJobBtn {
+    background-color: #dc3545;
+}
+.job-status {
+    margin-top: 15px;
+    background-color: #e9ecef;
+    padding: 10px;
+    border-radius: 4px;
 }
