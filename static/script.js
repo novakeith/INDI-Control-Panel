@@ -7,17 +7,11 @@ const statusDiv = document.getElementById('status');
 const devicesContainer = document.getElementById('devicesContainer');
 const connectionStatusSpan = document.getElementById('connectionStatus');
 
+let pollingInterval = null;
 let imagingPanelBuilt = false;
-const socket = io(); // Connect to the server's WebSocket
 
 // --- UI Update Functions ---
-
-/**
- * Updates the main connection status UI (buttons and status pill).
- * This is the single source of truth for the connection UI.
- * @param {boolean} isConnected - Whether we are connected to the INDI server.
- */
-function updateConnectionStatus(isConnected) {
+function updateConnectionStatusUI(isConnected) {
     if (isConnected) {
         connectionStatusSpan.textContent = 'Connected';
         connectionStatusSpan.className = 'status-connected';
@@ -28,53 +22,19 @@ function updateConnectionStatus(isConnected) {
         connectionStatusSpan.className = 'status-disconnected';
         connectBtn.style.display = 'inline-block';
         disconnectBtn.style.display = 'none';
-        devicesContainer.innerHTML = ''; // Clear devices on disconnect
-        document.getElementById('imagingJobContainer').style.display = 'none'; // Hide imaging panel
-        imagingPanelBuilt = false; // Allow panel to be rebuilt on next connection
+        devicesContainer.innerHTML = '';
+        const imagingPanel = document.getElementById('imagingJobContainer');
+        if(imagingPanel) imagingPanel.style.display = 'none';
+        imagingPanelBuilt = false;
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+            if(stopRefreshBtn) stopRefreshBtn.style.display = 'none';
+        }
     }
 }
 
-// --- WebSocket Event Handlers ---
-
-socket.on('connect', () => {
-    console.log('Successfully connected to the web server via WebSocket.');
-});
-
-socket.on('initial_state', (data) => {
-    const { devices, is_indi_connected } = data;
-    console.log('Received initial state. Is INDI connected:', is_indi_connected);
-    updateConnectionStatus(is_indi_connected);
-    if (is_indi_connected) {
-        renderDevices(devices);
-    }
-});
-
-socket.on('server_connected', (data) => {
-    console.log('Server has connected to INDI:', data.message);
-    updateConnectionStatus(true);
-});
-
-socket.on('server_disconnected', (data) => {
-    console.log('Server has disconnected from INDI:', data.message);
-    updateConnectionStatus(false);
-});
-
-socket.on('property_defined', (eventData) => {
-    const { device: deviceName, name: propName, data } = eventData;
-    renderDeviceProperty(deviceName, propName, data);
-});
-
-socket.on('property_updated', (eventData) => {
-    updateDeviceProperty(eventData);
-});
-
-socket.on('property_deleted', (eventData) => {
-    deleteDeviceProperty(eventData);
-});
-
-
 // --- Button Event Listeners ---
-
 connectBtn.addEventListener('click', () => {
     const host = document.getElementById('indiHostInput').value;
     if (!host) {
@@ -88,31 +48,52 @@ connectBtn.addEventListener('click', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ host: host })
     })
-    .then(response => response.json())
+    .then(res => res.json())
     .then(data => {
-        if (data.status === 'error') {
-            updateConnectionStatus(false);
+        if (data.status === 'success') {
+            updateConnectionStatusUI(true);
+            updateStatus(data.message, 'success');
+        } else {
+            updateConnectionStatusUI(false);
             updateStatus(data.message, 'error');
         }
-    }).catch(error => {
-        console.error('Fetch error:', error);
-        updateConnectionStatus(false);
+    })
+    .catch(err => {
+        console.error("Connection fetch error:", err);
+        updateConnectionStatusUI(false);
+        updateStatus("Error: Could not communicate with web server.", "error");
     });
 });
 
 disconnectBtn.addEventListener('click', () => {
-    // THE FIX: Perform an optimistic UI update for instant feedback.
-    console.log('Disconnect button clicked. Updating UI and sending request.');
-    updateConnectionStatus(false); 
-    fetch('/disconnect', { method: 'POST' });
+    fetch('/disconnect', { method: 'POST' })
+    .then(res => res.json())
+    .then(data => {
+        updateConnectionStatusUI(false);
+        updateStatus(data.message, 'success');
+    });
 });
 
 getPropertiesBtn.addEventListener('click', () => {
     sendCommand('<getProperties version="1.7"/>');
+    if (!pollingInterval) {
+        // Immediately fetch data once, then start the interval
+        fetchDeviceData(); 
+        pollingInterval = setInterval(fetchDeviceData, 2000);
+        stopRefreshBtn.style.display = 'inline-block';
+    }
+});
+
+stopRefreshBtn.addEventListener('click', () => {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+        stopRefreshBtn.style.display = 'none';
+        updateStatus('Live refresh stopped.', 'success');
+    }
 });
 
 // --- Helper & Rendering Functions ---
-
 function sendCommand(command) {
     fetch('/send_command', {
         method: 'POST',
@@ -126,85 +107,134 @@ function updateStatus(message, status) {
     statusDiv.className = status === 'success' ? 'status-success' : 'status-error';
 }
 
-function renderDevices(devices) {
-    devicesContainer.innerHTML = '';
-    for (const deviceName in devices) {
-        const deviceData = devices[deviceName];
-        for (const propName in deviceData) {
-            renderDeviceProperty(deviceName, propName, deviceData[propName]);
+function fetchDeviceData() {
+    fetch('/get_device_data')
+    .then(res => res.json())
+    .then(data => {
+        if (!data.is_connected && pollingInterval) {
+            console.log("Server reports INDI is disconnected. Stopping polling.");
+            updateConnectionStatusUI(false);
+            return;
+        }
+        renderDevices(data.devices);
+        
+        // THE FIX: Call the dedicated status updater on every poll
+        updateImagingStatus(data);
+
+    }).catch(err => {
+        console.error("Fetch error:", err);
+        updateConnectionStatusUI(false);
+    });
+}
+
+// function to update the imaging status bar
+function updateImagingStatus(data) {
+    const jobStatusText = document.getElementById('jobStatusText');
+    if (!jobStatusText) return;
+
+    // Priority 1: A new image has been saved. This is the final state.
+    if (data.last_saved_image) {
+        // Use replace to handle both Windows and Linux paths
+        jobStatusText.textContent = `Image Saved: ${data.last_saved_image.replace(/\\/g, '/')}`;
+        return;
+    }
+
+    // Priority 2: Exposure is in progress.
+    // Find any CCD device in the data payload.
+    const ccdDeviceName = Object.keys(data.devices).find(name => name.toUpperCase().includes('CCD'));
+    if (ccdDeviceName) {
+        const ccd = data.devices[ccdDeviceName];
+        const exposureProp = ccd.CCD_EXPOSURE;
+        if (exposureProp) {
+            const state = exposureProp.attributes.state;
+            if (state === 'Busy') {
+                const exposureValue = exposureProp.elements['CCD_EXPOSURE_VALUE']?.text || '0';
+                const formattedTime = parseFloat(exposureValue).toFixed(1);
+                jobStatusText.textContent = `Exposing... (${formattedTime}s remaining)`;
+                return;
+            } else if (state === 'Ok') {
+                // Only show this transitional message if we were just exposing.
+                if (jobStatusText.textContent.startsWith("Exposing")) {
+                    jobStatusText.textContent = 'Exposure complete. Awaiting image data...';
+                    return;
+                }
+            }
         }
     }
+
+    // Priority 3: Default to Idle if no other state applies.
+    // We only set to Idle if the status isn't showing a final "Saved" message.
+    if (!jobStatusText.textContent.startsWith("Image Saved")) {
+        jobStatusText.textContent = 'Idle';
+    }
 }
 
-function getOrCreateDeviceContainer(deviceName) {
-    const deviceId = `device-${deviceName.replace(/\s+/g, '-')}`;
-    let details = document.getElementById(deviceId);
-    if (!details) {
-        details = document.createElement('details');
+function renderDevices(devices) {
+    const openDevices = new Set();
+    document.querySelectorAll('#devicesContainer .device-details[open]').forEach(detail => {
+        const summary = detail.querySelector('.device-summary');
+        if(summary) openDevices.add(summary.textContent);
+    });
+
+    let ccdDeviceName = null;
+    const currentDeviceIds = new Set();
+
+    devicesContainer.innerHTML = ''; // Clear and redraw - this is the source of the flicker but it's reliable
+
+    for (const deviceName in devices) {
+        if (deviceName.toUpperCase().includes('CCD')) {
+            ccdDeviceName = deviceName;
+        }
+        const deviceData = devices[deviceName];
+        const deviceId = `device-${deviceName.replace(/\s+/g, '-')}`;
+        currentDeviceIds.add(deviceId);
+
+        const details = document.createElement('details');
         details.id = deviceId;
         details.className = 'device-details';
-        details.innerHTML = `<summary class="device-summary">${deviceName}</summary><div class="device-properties"></div>`;
+        
+        const summary = document.createElement('summary');
+        summary.className = 'device-summary';
+        summary.textContent = deviceName;
+        details.appendChild(summary);
+
+        const propertiesDiv = document.createElement('div');
+        propertiesDiv.className = 'device-properties';
+        details.appendChild(propertiesDiv);
+
+        for (const propName in deviceData) {
+            renderDeviceProperty(propertiesDiv, deviceName, propName, deviceData[propName]);
+        }
+        if (openDevices.has(deviceName)) {
+            details.open = true;
+        }
         devicesContainer.appendChild(details);
     }
-    return details.querySelector('.device-properties');
+
+    const imagingPanelContainer = document.getElementById('imagingJobContainer');
+    if (ccdDeviceName) {
+        if (!imagingPanelBuilt) {
+            buildImagingJobPanel(ccdDeviceName);
+            imagingPanelBuilt = true;
+        }
+        imagingPanelContainer.style.display = 'block';
+    } else {
+        imagingPanelContainer.style.display = 'none';
+    }
 }
 
-function renderDeviceProperty(deviceName, propName, data) {
-    const propertiesDiv = getOrCreateDeviceContainer(deviceName);
-    const propId = `prop-${deviceName}-${propName}`.replace(/\s+/g, '-');
-    
-    let propContainer = document.getElementById(propId);
-    if (!propContainer) {
-        propContainer = document.createElement('div');
-        propContainer.id = propId;
-        propertiesDiv.appendChild(propContainer);
-    }
-
+function renderDeviceProperty(propertiesDiv, deviceName, propName, data) {
+    const propContainer = document.createElement('div');
+    const attr = data.attributes;
     let listHTML = '<ul>';
     for (const elemName in data.elements) {
         const elem = data.elements[elemName];
-        const elemId = `elem-${deviceName}-${propName}-${elemName}`.replace(/\s+/g, '-');
-        listHTML += `<li id="${elemId}">${elem.attributes.label}: <span>${elem.text}</span></li>`;
+        listHTML += `<li>${elem.attributes.label}: <span>${elem.text}</span></li>`;
     }
     listHTML += '</ul>';
-
-    propContainer.innerHTML = `<h4>${data.attributes.label} (<span class="prop-state">${data.attributes.state}</span>)</h4>${listHTML}`;
-
-    if (deviceName.toUpperCase().includes('CCD')) {
-        buildAndShowImagingPanel(deviceName);
-    }
-}
-
-function updateDeviceProperty({ device: deviceName, name: propName, state, elements }) {
-    const propId = `prop-${deviceName}-${propName}`.replace(/\s+/g, '-');
-    const propContainer = document.getElementById(propId);
-    if (!propContainer) return;
-
-    const stateSpan = propContainer.querySelector('.prop-state');
-    if (stateSpan) stateSpan.textContent = state;
-
-    for (const elemName in elements) {
-        const elemId = `elem-${deviceName}-${propName}-${elemName}`.replace(/\s+/g, '-');
-        const elemSpan = document.getElementById(elemId)?.querySelector('span');
-        if (elemSpan) {
-            elemSpan.textContent = elements[elemName];
-        }
-    }
-}
-
-function deleteDeviceProperty({ device: deviceName, name: propName }) {
-    const propId = `prop-${deviceName}-${propName}`.replace(/\s+/g, '-');
-    const propContainer = document.getElementById(propId);
-    if (propContainer) propContainer.remove();
-}
-
-function buildAndShowImagingPanel(ccdName) {
-    const imagingPanelContainer = document.getElementById('imagingJobContainer');
-    if (!imagingPanelBuilt) {
-        buildImagingJobPanel(ccdName);
-        imagingPanelBuilt = true;
-    }
-    imagingPanelContainer.style.display = 'block';
+    propContainer.innerHTML = `<h4>${attr.label} (<span class="prop-state">${attr.state}</span>)</h4>${listHTML}`;
+    propertiesDiv.appendChild(propContainer);
+    
 }
 
 function buildImagingJobPanel(ccdName) {
@@ -213,6 +243,10 @@ function buildImagingJobPanel(ccdName) {
         <div id="imaging-panel" class="imaging-panel">
             <h3>Imaging Job: <span class="ccd-name">${ccdName}</span></h3>
             <div class="job-controls">
+                <div class="control-group">
+                    <label for="saveSubfolder">Project Name (Subfolder)</label>
+                    <input type="text" id="saveSubfolder" name="saveSubfolder" placeholder="e.g., M42_Project">
+                </div>
                 <div class="control-group">
                     <label for="photoType">Photo Type</label>
                     <select id="photoType" name="photoType">
@@ -228,11 +262,11 @@ function buildImagingJobPanel(ccdName) {
                 </div>
                 <div class="control-group">
                     <label for="exposureLength">Exposure (s)</label>
-                    <input type="number" id="exposureLength" name="exposureLength" value="10" min="0.001" step="0.1">
+                    <input type="number" id="exposureLength" name="exposureLength" value="10" min="0.001" step="1">
                 </div>
                 <div class="control-group">
                     <label for="isoSetting">ISO</label>
-                    <input type="number" id="isoSetting" name="isoSetting" value="800" step="100" min="100">
+                    <input type="number" id="isoSetting" name="isoSetting" value="1600" step="100" min="100">
                 </div>
             </div>
             <div class="job-actions">
@@ -245,4 +279,41 @@ function buildImagingJobPanel(ccdName) {
             </div>
         </div>
     `;
+
+    document.getElementById('startJobBtn').addEventListener('click', () => {
+		const jobStatusText = document.getElementById('jobStatusText');
+        if (jobStatusText) jobStatusText.textContent = "Starting Job...";
+        
+		const ccdNameElement = document.querySelector('#imaging-panel .ccd-name');
+        if (!ccdNameElement) return;
+        const jobData = {
+            ccdName: ccdNameElement.textContent,
+            subfolder: document.getElementById('saveSubfolder').value,
+            photoType: document.getElementById('photoType').value,
+            count: document.getElementById('photoCount').value,
+            exposure: document.getElementById('exposureLength').value,
+            iso: document.getElementById('isoSetting').value
+        };
+        fetch('/start_imaging_job', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(jobData)
+        }).then(res => res.json()).then(data => updateStatus(data.message, data.status));
+    });
+
+    // Add a listener for when an image is saved
+    document.addEventListener('image_saved', (e) => {
+        const jobStatusText = document.getElementById('jobStatusText');
+        if (jobStatusText) {
+            jobStatusText.textContent = `Image saved: ${e.detail.filepath}`;
+        }
+    });
 }
+
+// Add an event listener to the document to handle the custom event
+document.addEventListener('image_saved_check', (e) => {
+    const jobStatusText = document.getElementById('jobStatusText');
+    if (jobStatusText) {
+        jobStatusText.textContent = `Image saved: ${e.detail.filepath}`;
+    }
+});
