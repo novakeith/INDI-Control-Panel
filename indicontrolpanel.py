@@ -20,9 +20,8 @@ LAST_SAVED_IMAGE = None
 
 # --- Helper function to handle incoming image data ---
 def handle_blob_vector(sock, root):
-    global CURRENT_SAVE_SUBFOLDER
+    global CURRENT_SAVE_SUBFOLDER, LAST_SAVED_IMAGE
     device_name = root.get('device')
-    blob_prop_name = root.get('name')
     try:
         blob_element = root.find('oneBLOB')
         if blob_element is None: return
@@ -38,7 +37,8 @@ def handle_blob_vector(sock, root):
             image_data.extend(chunk)
         
         base_dir = 'images'
-        target_dir = os.path.join(base_dir, CURRENT_SAVE_SUBFOLDER) if CURRENT_SAVE_SUBFOLDER else base_dir
+        subfolder_name = CURRENT_SAVE_SUBFOLDER if CURRENT_SAVE_SUBFOLDER else ''
+        target_dir = os.path.join(base_dir, subfolder_name)
         if not os.path.exists(target_dir):
             os.makedirs(target_dir)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -46,11 +46,9 @@ def handle_blob_vector(sock, root):
         filepath = os.path.join(target_dir, filename)
         with open(filepath, 'wb') as f:
             f.write(image_data)
-        print(f"[DEBUG] Saved image to {filepath}")
         
-        # Update the global state with the relative path for the UI
-        subfolder_name = CURRENT_SAVE_SUBFOLDER if CURRENT_SAVE_SUBFOLDER else ''
         LAST_SAVED_IMAGE = os.path.join(subfolder_name, filename)
+        print(f"[DEBUG] Saved image to {filepath}. Stored last image as {LAST_SAVED_IMAGE}")
     except Exception as e:
         print(f"[DEBUG] ERROR in handle_blob_vector: {e}")
     finally:
@@ -65,7 +63,6 @@ def listen_to_indi_server():
             time.sleep(1)
             continue
         
-        # We have a socket, so we enter the active listening loop.
         active_socket = indi_socket
         buffer = ""
         try:
@@ -96,19 +93,14 @@ def listen_to_indi_server():
                         buffer = buffer[message_end:]
                         try:
                             root = ET.fromstring(message)
-                            # --- THIS IS OUR DEBUGGING TEST ---
                             if root.tag == 'setBLOBVector':
-                                print("\n" + "="*60)
-                                print("!!! [DEBUG] BLOB MESSAGE DETECTED! HANDING OFF TO BLOB HANDLER. !!!")
-                                print(f"!!! [DEBUG] Device: {root.get('device')}, Name: {root.get('name')} !!!")
-                                print("="*60 + "\n")
                                 handle_blob_vector(active_socket, root)
                             else:
                                 update_device_properties(root)
                         except ET.ParseError as e:
                             print(f"[DEBUG] XML Parse Error: {e}")
                 except socket.timeout:
-                    continue # This is normal, just means no data arrived
+                    continue 
                 except Exception as e:
                     print(f"[DEBUG] Unhandled exception in receive loop: {e}")
                     break
@@ -117,7 +109,6 @@ def listen_to_indi_server():
             if active_socket:
                 try: active_socket.close()
                 except Exception: pass
-            # If the socket that failed is still the main one, clear it.
             if indi_socket == active_socket:
                 indi_socket = None
                 with devices_lock:
@@ -161,16 +152,13 @@ def connect_to_indi():
         return jsonify({'status': 'error', 'message': 'A connection is already active.'})
     host = request.json.get('host')
     try:
-        print(f"[DEBUG] Attempting to connect to {host}...")
         new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         new_socket.settimeout(1.0)
         new_socket.connect((host, 7624))
-        # The listener thread is already running, so we just assign the socket.
         indi_socket = new_socket
         print(f"[DEBUG] Connection successful. Socket assigned.")
         return jsonify({'status': 'success', 'message': f'Successfully connected to {host}'})
     except Exception as e:
-        print(f"[DEBUG] ERROR during connection: {e}")
         return jsonify({'status': 'error', 'message': f"Connection failed: {e}"})
 
 @app.route('/disconnect', methods=['POST'])
@@ -181,7 +169,6 @@ def disconnect_from_indi():
         try:
             indi_socket.close()
         except Exception: pass
-        # The listener thread will detect this and clean up.
         indi_socket = None
         with devices_lock:
             INDI_DEVICES.clear()
@@ -192,44 +179,78 @@ def send_command():
     command = request.json.get('command')
     if indi_socket and command:
         try:
-            print(f"[DEBUG] Sending command: {command}")
             indi_socket.sendall(command.encode())
             return jsonify({'status': 'success', 'message': 'Command sent.'})
         except Exception as e:
             return jsonify({'status': 'error', 'message': f"Send failed: {e}"})
     return jsonify({'status': 'error', 'message': 'Not connected.'})
 
+# --- THE DEFINITIVE FIX: AN INTELLIGENT IMAGING JOB ---
 @app.route('/start_imaging_job', methods=['POST'])
 def start_imaging_job():
-    global CURRENT_SAVE_SUBFOLDER
+    global CURRENT_SAVE_SUBFOLDER, LAST_SAVED_IMAGE, INDI_DEVICES, devices_lock
     if not indi_socket:
         return jsonify({'status': 'error', 'message': 'Not connected.'})
     
     LAST_SAVED_IMAGE = None
-    
     data = request.json
-    subfolder, exposure, ccd_name, photo_type = data.get('subfolder'), data.get('exposure'), data.get('ccdName'), data.get('photoType')
+    subfolder, exposure, ccd_name, photo_type, iso = data.get('subfolder'), data.get('exposure'), data.get('ccdName'), data.get('photoType'), data.get('iso')
+    
     CURRENT_SAVE_SUBFOLDER = secure_filename(subfolder) if subfolder else None
+    
+    commands_to_send = []
+    
+    with devices_lock:
+        ccd_properties = INDI_DEVICES.get(ccd_name, {})
+
+        print("\n[DEBUG] === Building Intelligent Imaging Sequence ===")
+        
+        # Step 1: Connect to the driver (The Handshake)
+        # This is mandatory to ensure the driver is awake and has defined its properties.
+        commands_to_send.append(f'<newSwitchVector device="{ccd_name}" name="CONNECTION"><oneSwitch name="CONNECT">On</oneSwitch></newSwitchVector>')
+        print(f"[DEBUG] Step 1 (MANDATORY): Connecting to driver '{ccd_name}'.")
+        
+        # Step 2: Claim BLOB ownership
+        commands_to_send.append(f'<enableBLOB device="{ccd_name}">Also</enableBLOB>')
+        print("[DEBUG] Step 2: Claiming BLOB ownership...")
+        
+        # Step 3: Check for FRAME_TYPE support
+        if 'CCD_FRAME_TYPE' in ccd_properties:
+            frame_type_map = {'light': 'FRAME_LIGHT', 'bias': 'FRAME_BIAS', 'dark': 'FRAME_DARK', 'flat': 'FRAME_FLAT'}
+            indi_frame_type = frame_type_map.get(photo_type.lower(), 'FRAME_LIGHT')
+            commands_to_send.append(f'<newSwitchVector device="{ccd_name}" name="CCD_FRAME_TYPE"><oneSwitch name="{indi_frame_type}">On</oneSwitch></newSwitchVector>')
+            print(f"[DEBUG] Step 3: CCD_FRAME_TYPE property found. Will set to {indi_frame_type}.")
+        else:
+            print("[DEBUG] Step 3: CCD_FRAME_TYPE property not found. Skipping.")
+
+        # Step 4: Check for UPLOAD_MODE support
+        if 'CCD_UPLOAD_MODE' in ccd_properties:
+            commands_to_send.append(f'<newSwitchVector device="{ccd_name}" name="CCD_UPLOAD_MODE"><oneSwitch name="UPLOAD_CLIENT">On</oneSwitch></newSwitchVector>')
+            print("[DEBUG] Step 4: CCD_UPLOAD_MODE property found. Will set to CLIENT.")
+        else:
+            print("[DEBUG] Step 4: CCD_UPLOAD_MODE property not found. Skipping.")
+
+        # Step 5: Check for ISO support
+        if 'CCD_CONTROLS' in ccd_properties and 'ISO' in ccd_properties['CCD_CONTROLS']['elements']:
+            commands_to_send.append(f'<newNumberVector device="{ccd_name}" name="CCD_CONTROLS"><oneNumber name="ISO">{iso}</oneNumber></newSwitchVector>')
+            print(f"[DEBUG] Step 5: CCD_CONTROLS.ISO property found. Will set to {iso}.")
+        else:
+            print("[DEBUG] Step 5: CCD_CONTROLS.ISO property not found. Skipping.")
+            
+        # Step 6: The exposure command is always sent
+        commands_to_send.append(f'<newNumberVector device="{ccd_name}" name="CCD_EXPOSURE"><oneNumber name="CCD_EXPOSURE_VALUE">{exposure}</oneNumber></newNumberVector>')
+        print(f"[DEBUG] Step 6: Will set exposure to {exposure}s.")
+
     try:
-        frame_type_map = {'light': 'FRAME_LIGHT', 'bias': 'FRAME_BIAS', 'dark': 'FRAME_DARK', 'flat': 'FRAME_FLAT'}
-        indi_frame_type = frame_type_map.get(photo_type.lower(), 'FRAME_LIGHT')
-        print("[DEBUG] Sending imaging command sequence...")
-        
-        frame_type_command = f'<newSwitchVector device="{ccd_name}" name="CCD_FRAME_TYPE"><oneSwitch name="{indi_frame_type}">On</oneSwitch></newSwitchVector>'
-        print(f"[DEBUG] Step 1: {frame_type_command}")
-        indi_socket.sendall(frame_type_command.encode())
-        time.sleep(0.5)
-
-        upload_mode_command = f'<newSwitchVector device="{ccd_name}" name="CCD_UPLOAD_MODE"><oneSwitch name="UPLOAD_CLIENT">On</oneSwitch></newSwitchVector>'
-        print(f"[DEBUG] Step 2: {upload_mode_command}")
-        indi_socket.sendall(upload_mode_command.encode())
-        time.sleep(0.5)
-
-        exposure_command = f'<newNumberVector device="{ccd_name}" name="CCD_EXPOSURE"><oneNumber name="CCD_EXPOSURE_VALUE">{exposure}</oneNumber></newNumberVector>'
-        print(f"[DEBUG] Step 3: {exposure_command}")
-        indi_socket.sendall(exposure_command.encode())
-        
-        print("[DEBUG] Imaging command sequence sent successfully.")
+        # Send the dynamically built command sequence with delays
+        for i, command in enumerate(commands_to_send):
+            print(f"[DEBUG] Sending command {i+1}/{len(commands_to_send)}: {command}")
+            indi_socket.sendall(command.encode())
+            # Use a longer delay after the crucial connection command
+            delay = 1.0 if "CONNECTION" in command else 0.5
+            time.sleep(delay)
+            
+        print("[DEBUG] === Imaging Command Sequence Sent Successfully ===\n")
         return jsonify({'status': 'success', 'message': f'Exposure started for {exposure}s.'})
     except Exception as e:
         print(f"[DEBUG] ERROR sending imaging sequence: {e}")
@@ -240,7 +261,6 @@ def get_device_data():
     global LAST_SAVED_IMAGE
     with devices_lock:
         is_connected = indi_socket is not None
-        # NEW: Include the last saved image path in the response
         response_data = {
             'devices': INDI_DEVICES,
             'is_connected': is_connected,
