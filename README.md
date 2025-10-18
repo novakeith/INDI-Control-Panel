@@ -1,4 +1,4 @@
-# INDI Control Panel (testing branch)
+# INDI Control Panel
 
 ## What is it?
 I put this together to be able to remotely control some of the functions I would normally access via KStars+Ekos. Basically, my workflow was using KStars and Ekos on my Mac to remotely control my mount, via INDI server running on a Raspberry Pi. I'm a big fan of the simplicity + ease of use of INDI Web Manager, and I wanted something like that to initiate imaging, as well as check the status of an imaging job. I am figuring this out as I go along, but I suspect the new workflow would be to polar align, choose a target, and then instead of needing to keep KStars open at all times, I could just start imaging from my smartphone.
