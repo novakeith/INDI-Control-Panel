@@ -4,6 +4,9 @@
 # using the Gunicorn WSGI server. It automatically detects
 # if gunicorn is installed in a local virtual environment.
 
+# Configure port here, if you want
+PORT=9624
+
 # --- Find the gunicorn executable ---
 GUNICORN_CMD=""
 if [ -x "./bin/gunicorn" ]; then
@@ -22,11 +25,11 @@ else
 fi
 
 # --- Launch the application ---
-echo "Starting INDI Control Panel on http://0.0.0.0:5000"
+echo "Starting INDI Control Panel on http://0.0.0.0:$PORT"
 
 # --worker-class eventlet: A special worker required for WebSocket support.
 # -w 1: With eventlet, one worker can handle many concurrent connections.
 # --bind 0.0.0.0:5000: Binds to port 8000 on all network interfaces.
 # indicontrolpanel:app: Tells Gunicorn to look inside the 'indicontrolpanel.py'
 #                      file for the Flask instance named 'app'.
-$GUNICORN_CMD --worker-class eventlet -w 1 --bind 0.0.0.0:5000 indicontrolpanel:app
+$GUNICORN_CMD --worker-class eventlet -w 1 --bind 0.0.0.0:$PORT indicontrolpanel:app
