@@ -96,7 +96,12 @@ def listen_to_indi_server():
                         buffer = buffer[message_end:]
                         try:
                             root = ET.fromstring(message)
+                            # --- THIS IS OUR DEBUGGING TEST ---
                             if root.tag == 'setBLOBVector':
+                                print("\n" + "="*60)
+                                print("!!! [DEBUG] BLOB MESSAGE DETECTED! HANDING OFF TO BLOB HANDLER. !!!")
+                                print(f"!!! [DEBUG] Device: {root.get('device')}, Name: {root.get('name')} !!!")
+                                print("="*60 + "\n")
                                 handle_blob_vector(active_socket, root)
                             else:
                                 update_device_properties(root)
