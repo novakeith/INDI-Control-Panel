@@ -9,17 +9,11 @@ Clone or download this github repository
 git clone https://github.com/novakeith/INDI-Control-Panel.git
 ```
 
-Ensure you have Flask for Python installed. I created a virtual environment to keep things simple. Enter the working directory where you put the project files and create the venv:
+Ensure you have Flask for Python, and gunicorn installed. I created a virtual environment to keep things simple. Enter the working directory where you put the project files and create the venv:
 ```	
 python3 -m venv . 
 ./bin/pip3 install flask
-```
-
-Please also make sure gunicorn, flask-socketio, and eventlet are all installed
-```
 ./bin/pip3 install gunicorn
-./bin/pip3 install flask-socketio
-./bin/pip3 install eventlet
 ```
 
 You don't need the virtual environment if you want to install flask system wide, it's your choice. Either way, when you are ready, you should make launch.sh executable and run the service with:
@@ -27,12 +21,12 @@ You don't need the virtual environment if you want to install flask system wide,
 chmod +x launch.sh
 ./launch.sh
 ```
-
+Launch.sh can be modified if you want to change the port this service runs on. By default, it uses 9624. 
 
 ## What's the current status?
 I'm figuring out how to make this work. I'm not sure if it will go anywhere. Right now, you can:
 - run this, either locally or on your remote observatory PC/Raspberry Pi;
-- access the service via http://127.0.0.1:5000 if you are local or http://{Your-Remote-Computer-IP}:5000
+- access the service via http://127.0.0.1:9624 if you are local or http://{Your-Remote-Computer-IP}:9624
 - you can currently get the status of your INDI devices, with live refresh from your INDI server
 - 
 
