@@ -7,6 +7,7 @@ import os
 from datetime import datetime
 from werkzeug.utils import secure_filename
 import time
+import traceback
 
 app = Flask(__name__)
 
@@ -29,12 +30,29 @@ def handle_blob_vector(sock, root):
         blob_format = blob_element.get('format')
         print(f"[DEBUG] Receiving BLOB: Size {blob_size}, Format {blob_format}")
         image_data = bytearray()
-        sock.settimeout(30.0)
+        
+        # 1. Define a larger buffer size. 256KB is a good starting point.
+        BUFFER_SIZE = 262144 # 256 * 1024
+        
+        # 2. Set the OS-level socket receive buffer to our larger size.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFFER_SIZE)
+        print(f"[DEBUG] Set socket SO_RCVBUF to {BUFFER_SIZE} bytes for high-speed transfer.")
+        
+        # 3. Switch to blocking mode for the transfer.
+        sock.settimeout(None) 
+
         while len(image_data) < blob_size:
             remaining = blob_size - len(image_data)
-            chunk = sock.recv(min(4096, remaining))
-            if not chunk: return
+            # 4. Request a larger chunk size in our recv call.
+            chunk = sock.recv(min(BUFFER_SIZE, remaining))
+            if not chunk:
+                print("[DEBUG] ERROR: Socket closed unexpectedly while receiving image data.")
+                return
             image_data.extend(chunk)
+            print(f"[DEBUG] Download progress: {len(image_data)} / {blob_size} bytes", end='\r')
+
+        
+        print("\n[DEBUG] Download complete.")
         
         base_dir = 'images'
         subfolder_name = CURRENT_SAVE_SUBFOLDER if CURRENT_SAVE_SUBFOLDER else ''
@@ -50,9 +68,13 @@ def handle_blob_vector(sock, root):
         LAST_SAVED_IMAGE = os.path.join(subfolder_name, filename)
         print(f"[DEBUG] Saved image to {filepath}. Stored last image as {LAST_SAVED_IMAGE}")
     except Exception as e:
-        print(f"[DEBUG] ERROR in handle_blob_vector: {e}")
+        print("\n" + "="*60)
+        print(f"!!! [DEBUG] An unexpected CRITICAL ERROR occurred in handle_blob_vector !!!")
+        traceback.print_exc()
+        print("="*60 + "\n")
     finally:
         sock.settimeout(1.0)
+        print("[DEBUG] Restored non-blocking mode to socket.")
 
 # --- Core INDI Listener Thread ---
 def listen_to_indi_server():
